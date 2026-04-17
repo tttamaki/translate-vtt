@@ -18,8 +18,25 @@ class VTTTranslator:
         self.retries = retries
         self.max_workers = max_workers
         self._count_lock = threading.Lock()
+        self._translator_local = threading.local()
 
-    def translate_buffer(self, buffer: list[str]) -> str:
+    def _create_translator(self) -> GoogleTranslator:
+        """新しい翻訳器インスタンスを生成する"""
+        return GoogleTranslator(source='ja', target='en')
+
+    def _get_thread_translator(self) -> GoogleTranslator:
+        """スレッドごとの翻訳器を取得する"""
+        translator = getattr(self._translator_local, 'translator', None)
+        if translator is None:
+            translator = self._create_translator()
+            self._translator_local.translator = translator
+        return translator
+
+    def translate_buffer(
+        self,
+        buffer: list[str],
+        translator: GoogleTranslator | None = None,
+    ) -> str:
         """テキストバッファの翻訳処理
 
         Args:
@@ -33,9 +50,10 @@ class VTTTranslator:
             return ''
 
         retries = self.retries
+        active_translator = translator or self.translator
         for attempt in range(retries):
             try:
-                result: str = self.translator.translate(src)
+                result: str = active_translator.translate(src)
                 with self._count_lock:
                     self.translated_count += 1
                 return result
@@ -47,6 +65,10 @@ class VTTTranslator:
                 sleep(1)
 
         return src
+
+    def translate_line(self, line: str) -> str:
+        """1行分の翻訳をスレッド専用翻訳器で実行する"""
+        return self.translate_buffer([line], translator=self._get_thread_translator())
 
     def flush_japanese_buffer(self, japanese_buffer: list[str]) -> tuple[str, bool] | None:
         """日本語バッファを1行にまとめて翻訳対象タプルとして返す"""
@@ -104,15 +126,20 @@ class VTTTranslator:
         with tqdm(total=translate_target_count, desc='Translating', unit='line') as progress:
             if translate_target_count > 0:
                 worker_count = min(self.max_workers, translate_target_count)
-                with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                    future_to_idx = {
-                        executor.submit(self.translate_buffer, [line]): idx
-                        for idx, line in translate_jobs
-                    }
-                    for future in as_completed(future_to_idx):
-                        idx = future_to_idx[future]
-                        translated_lines[idx] = future.result()
+                if worker_count == 1:
+                    for idx, line in translate_jobs:
+                        translated_lines[idx] = self.translate_buffer([line])
                         progress.update(1)
+                else:
+                    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                        future_to_idx = {
+                            executor.submit(self.translate_line, line): idx
+                            for idx, line in translate_jobs
+                        }
+                        for future in as_completed(future_to_idx):
+                            idx = future_to_idx[future]
+                            translated_lines[idx] = future.result()
+                            progress.update(1)
 
         translated_text = '\n'.join(translated_lines) + ('\n' if text.endswith('\n') else '')
         return translated_text
