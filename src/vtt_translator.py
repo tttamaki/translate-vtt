@@ -52,23 +52,12 @@ class VTTTranslator:
         japanese_buffer.clear()
         return flattened, True
 
-    def translate(self, text: str) -> str:
-        """テキストを行単位で処理し、日本語部分を翻訳
-
-        Args:
-            text: 翻訳するテキスト
-
-        Returns:
-            翻訳されたテキスト
-        """
-        lines = text.splitlines()
-
-        # 行処理用の初期化: (line, should_translate)
+    def collect_out_lines(self, lines: list[str]) -> list[tuple[str, bool]]:
+        """各行を走査して、翻訳対象フラグ付きの出力行を収集する"""
         out: list[tuple[str, bool]] = []
         japanese_buffer: list[str] = []
 
-        # 各行を処理：日本語行をバッファに集め、非日本語行はそのまま出力
-        for line in tqdm(lines, desc='Translating', unit='line'):
+        for line in lines:
             if self.jp_re.search(line):
                 japanese_buffer.append(line)
             else:
@@ -81,16 +70,35 @@ class VTTTranslator:
         if flushed is not None:
             out.append(flushed)
 
+        return out
+
+    def translate(self, text: str) -> str:
+        """テキストを行単位で処理し、日本語部分を翻訳
+
+        Args:
+            text: 翻訳するテキスト
+
+        Returns:
+            翻訳されたテキスト
+        """
+        lines = text.splitlines()
+        out = self.collect_out_lines(lines)
+
         if not out:
             return ''
 
+        # 翻訳対象数を事前計算し、翻訳進捗をその総数で表示
+        translate_target_count = sum(1 for _, should_translate in out if should_translate)
+
         # 翻訳フラグが立っている行のみ翻訳
         translated_lines: list[str] = []
-        for line, should_translate in out:
-            if should_translate:
-                translated_lines.append(self.translate_buffer([line]))
-            else:
-                translated_lines.append(line)
+        with tqdm(total=translate_target_count, desc='Translating', unit='line') as progress:
+            for line, should_translate in out:
+                if should_translate:
+                    translated_lines.append(self.translate_buffer([line]))
+                    progress.update(1)
+                else:
+                    translated_lines.append(line)
 
         translated_text = '\n'.join(translated_lines) + ('\n' if text.endswith('\n') else '')
         return translated_text
