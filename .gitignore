@@ -1,1 +1,3 @@
 *.vtt
+.coverage
+__pycache__/

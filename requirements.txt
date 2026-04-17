@@ -1,2 +1,4 @@
 deep_translator
 tqdm
+pytest
+pytest-cov

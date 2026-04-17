@@ -31,8 +31,7 @@ A Python utility for translating Japanese WebVTT (`.vtt`) subtitle files into En
 - Python 3.x
 - [`deep-translator`](https://pypi.org/project/deep-translator/)
 - [`tqdm`](https://pypi.org/project/tqdm/)
-
----
+- `pytest`
 
 ## 🚀 Installation
 
@@ -40,23 +39,62 @@ Activate your virtual environment and install dependencies:
 
 ```bash
 source .venv/bin/activate
-pip install deep-translator tqdm
+pip install deep-translator tqdm pytest
 ```
 
 ---
 
 ## Usage
 
-Run the script with a `.vtt` file as input:
+### Running the translation
+
+Navigate to the `src` directory and run the script with a `.vtt` file as input:
 
 ```bash
-python translate_vtt.py <input_file.vtt>
+python src/translate_vtt.py <input_file.vtt>
+```
+
+Or run from the project root:
+
+```bash
+python src/translate_vtt.py <input_file.vtt>
 ```
 
 ### Example
 
 ```bash
-python translate_vtt.py example.vtt"
+python src/translate_vtt.py ../example.vtt
+```
+
+---
+
+## Test
+
+Run the test suite using pytest:
+
+```bash
+# From project root
+python -m pytest test/test_vtt_translator.py -v
+
+# Run with coverage
+python -m pytest test/test_vtt_translator.py --cov --cov-report=html
+```
+
+---
+
+## Project Structure
+
+```text
+translate-vtt/
+├── src/
+│   ├── __init__.py
+│   ├── translate_vtt.py      # Main script
+│   └── vtt_translator.py     # VTTTranslator class
+├── test/
+│   └── test_vtt_translator.py # Pytest test suite
+├── README.md
+├── pyproject.toml
+└── requirements.txt
 ```
 
 ---
@@ -96,10 +134,15 @@ python translate_vtt.py example.vtt"
 source .venv/bin/activate
 
 # Install dependencies
-pip install deep-translator tqdm
+pip install -r requirements.txt
+
+# Run tests
+python -m pytest -v
 
 # Run translation
-python translate_vtt.py sample.vtt
+python src/translate_vtt.py example.vtt
+
+# 6. Output file will be generated as example_en.vtt
 ```
 
 ---
