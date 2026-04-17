@@ -18,10 +18,7 @@ def main() -> None:
     vtt_translator = VTTTranslator()
     out = vtt_translator.translate(text)
 
-    output_path.write_text(
-        '\n'.join(out) + ('\n' if text.endswith('\n') else ''),
-        encoding='utf-8',
-    )
+    output_path.write_text(out, encoding='utf-8')
 
     print(f'translated_lines={vtt_translator.translated_count}')
     print(f'output_file={output_path}')
