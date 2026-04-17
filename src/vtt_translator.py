@@ -1,4 +1,6 @@
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import sleep
 from deep_translator import GoogleTranslator  # type: ignore[import-untyped]
 from tqdm import tqdm
@@ -7,13 +9,15 @@ from tqdm import tqdm
 class VTTTranslator:
     """VTTファイルの翻訳を行うクラス"""
 
-    def __init__(self, retries: int = 3) -> None:
+    def __init__(self, retries: int = 3, max_workers: int = 4) -> None:
         """翻訳エンジンと日本語判定パターンを初期化"""
         self.jp_re = re.compile(
             r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff66-\uff9f]')
         self.translator = GoogleTranslator(source='ja', target='en')
         self.translated_count = 0
         self.retries = retries
+        self.max_workers = max_workers
+        self._count_lock = threading.Lock()
 
     def translate_buffer(self, buffer: list[str]) -> str:
         """テキストバッファの翻訳処理
@@ -32,7 +36,8 @@ class VTTTranslator:
         for attempt in range(retries):
             try:
                 result: str = self.translator.translate(src)
-                self.translated_count += 1
+                with self._count_lock:
+                    self.translated_count += 1
                 return result
             except Exception as exc:  # pylint: disable=broad-exception-caught
                 if attempt == retries - 1:
@@ -87,20 +92,27 @@ class VTTTranslator:
         if not line_entries:
             return ''
 
-        # 翻訳対象数を事前計算し、翻訳進捗をその総数で表示
-        translate_target_count = sum(
-            1 for _, should_translate in line_entries if should_translate
-        )
+        # 翻訳対象行だけを抽出して並列翻訳
+        translate_jobs = [
+            (idx, line)
+            for idx, (line, should_translate) in enumerate(line_entries)
+            if should_translate
+        ]
+        translate_target_count = len(translate_jobs)
 
-        # 翻訳フラグが立っている行のみ翻訳
-        translated_lines: list[str] = []
+        translated_lines = [line for line, _ in line_entries]
         with tqdm(total=translate_target_count, desc='Translating', unit='line') as progress:
-            for line, should_translate in line_entries:
-                if should_translate:
-                    translated_lines.append(self.translate_buffer([line]))
-                    progress.update(1)
-                else:
-                    translated_lines.append(line)
+            if translate_target_count > 0:
+                worker_count = min(self.max_workers, translate_target_count)
+                with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                    future_to_idx = {
+                        executor.submit(self.translate_buffer, [line]): idx
+                        for idx, line in translate_jobs
+                    }
+                    for future in as_completed(future_to_idx):
+                        idx = future_to_idx[future]
+                        translated_lines[idx] = future.result()
+                        progress.update(1)
 
         translated_text = '\n'.join(translated_lines) + ('\n' if text.endswith('\n') else '')
         return translated_text
